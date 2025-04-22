@@ -1,0 +1,131 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+
+    - name: Install Node dependencies
+      run: npm ci
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Solidity linter
+      run: npx solhint 'contracts/**/*.sol'
+
+    - name: Run Python linter
+      run: |
+        pip install pylint
+        pylint *.py utils/*.py tests/*.py
+
+    - name: Run Hardhat tests
+      run: npx hardhat test
+      env:
+        WEB3_PROVIDER: ${{ secrets.WEB3_PROVIDER }}
+        PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+
+    - name: Run Python tests
+      run: python -m pytest tests/
+      env:
+        WEB3_PROVIDER: ${{ secrets.WEB3_PROVIDER }}
+        PARASWAP_API_KEY: ${{ secrets.PARASWAP_API_KEY }}
+
+    - name: Run security checks
+      run: |
+        npm install -g slither-analyzer
+        slither . --exclude naming-convention --exclude external-function
+
+  deploy-staging:
+    needs: test
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Deploy to Mumbai testnet
+      run: npx hardhat run scripts/deploy.js --network mumbai
+      env:
+        WEB3_PROVIDER: ${{ secrets.MUMBAI_RPC }}
+        PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        ENVIRONMENT: staging
+
+    - name: Save contract address
+      run: |
+        echo "CONTRACT_ADDRESS=$(cat .contract-address)" >> $GITHUB_ENV
+
+    - name: Create deployment PR
+      uses: peter-evans/create-pull-request@v5
+      with:
+        title: 'Deploy to Mumbai testnet'
+        body: |
+          Deployed contract address: ${{ env.CONTRACT_ADDRESS }}
+          Network: Mumbai testnet
+        branch: deploy/staging
+        base: main
+
+  deploy-production:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Deploy to Polygon mainnet
+      run: npx hardhat run scripts/deploy.js --network polygon
+      env:
+        WEB3_PROVIDER: ${{ secrets.POLYGON_RPC }}
+        PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        ENVIRONMENT: production
+
+    - name: Create GitHub release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          Deployed contract address: ${{ env.CONTRACT_ADDRESS }}
+          Network: Polygon mainnet
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
