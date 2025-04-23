@@ -126,26 +126,43 @@ describe("ArbitrageBot", function () {
     });
 
     it("Deve proteger contra ataques de reentrância", async function () {
-      const { arbitrageBot, tokenA, tokenB, owner } = await loadFixture(deployArbitrageBotFixture);
+      const [owner] = await ethers.getSigners();
+      const { arbitrageBot, tokenA, tokenB } = await loadFixture(deployArbitrageBotFixture);
       
-      // Tenta executar duas arbitragens simultaneamente
-      const amount = ethers.utils.parseEther("1");
-      await tokenA.approve(arbitrageBot.address, amount.mul(2));
-      await tokenA.transfer(arbitrageBot.address, amount.mul(2));
+      // Configure os tokens
+      const amount = ethers.utils.parseEther("1000");
+      
+      // Mint tokens para owner
+      await tokenA.mint(owner.address, amount.mul(4));
+      await tokenB.mint(owner.address, amount.mul(4));
+
+      // Deploy o router malicioso
+      const ReentrantRouter = await ethers.getContractFactory("MockReentrantRouter");
+      const maliciousRouter = await ReentrantRouter.deploy(arbitrageBot.address);
+
+      // Transferir tokens para o router malicioso
+      await tokenA.transfer(maliciousRouter.address, amount);
+      await tokenB.transfer(maliciousRouter.address, amount);
+
+      // Adicione o DEX malicioso
+      await arbitrageBot.addDex(maliciousRouter.address, "MaliciousDEX");
+
+      // Aprove e transfira tokens para o ArbitrageBot
+      await tokenA.approve(arbitrageBot.address, amount);
+      await tokenA.transfer(arbitrageBot.address, amount);
 
       const arbitrageParams = {
         tokenIn: tokenA.address,
         tokenOut: tokenB.address,
-        amount: amount,
+        amount: ethers.utils.parseEther("100"),
         buyDexIndex: 0,
         sellDexIndex: 1
       };
 
-      // Tenta executar uma arbitragem dentro de outra
-      const tx1 = arbitrageBot.executeArbitrage(arbitrageParams);
-      const tx2 = arbitrageBot.executeArbitrage(arbitrageParams);
-
-      await expect(Promise.all([tx1, tx2])).to.be.revertedWith("ReentrancyGuard: reentrant call");
+      // O ataque deve falhar devido ao ReentrancyGuard
+      await expect(
+        arbitrageBot.executeArbitrage(arbitrageParams)
+      ).to.be.revertedWith("ReentrancyGuard: reentrant call");
     });
   });
 

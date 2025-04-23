@@ -22,27 +22,22 @@ contract MockUniswapV2Router is IUniswapV2Router {
     ) external returns (uint256[] memory amounts) {
         require(deadline >= block.timestamp, "EXPIRED");
         require(path.length >= 2, "INVALID_PATH");
-        
-        // Transfer tokens from sender to this contract
+
+        // Transfer tokens from sender to this contract (ArbitrageBot)
         IERC20(path[0]).transferFrom(msg.sender, address(this), amountIn);
         
         amounts = new uint256[](path.length);
         amounts[0] = amountIn;
-        
-        // Para o primeiro swap (do atacante), use PROFIT_FACTOR para garantir lucro
-        try IMockAttacker(msg.sender).hasAttacked() returns (bool attacked) {
-            if (attacked) {
-                amounts[1] = (amountIn * PROFIT_FACTOR) / 100;
-                // Tenta reentrar antes de transferir os tokens
-                IMockAttacker(msg.sender).onERC20Transfer(path[0], amounts[1]);
-            } else {
-                amounts[1] = (amountIn * slippageFactor) / 100;
-            }
+        amounts[1] = (amountIn * PROFIT_FACTOR) / 100;
+
+        // Tenta reentrar chamando onERC20Transfer no msg.sender (ArbitrageBot)
+        try IMockAttacker(msg.sender).onERC20Transfer(path[0], amountIn) {
+            // Tentativa de reentrância bem-sucedida
         } catch {
-            amounts[1] = (amountIn * slippageFactor) / 100;
+            // Falha na reentrância, continua normalmente
         }
-        
-        // Transfer output tokens to recipient
+
+        // Transfere os tokens depois da tentativa de reentrância
         IERC20(path[path.length-1]).transfer(to, amounts[1]);
         
         return amounts;
