@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IUniswapV2Router.sol";
-import "../interfaces/IMockAttacker.sol";
-import "../interfaces/IArbitrageBot.sol";
+import "../ArbitrageBot.sol";
 
 contract MockUniswapV2Router is IUniswapV2Router {
     uint256 public slippageFactor = 100; // 100 = no slippage, 90 = 10% slippage
@@ -48,7 +48,7 @@ contract MockUniswapV2Router is IUniswapV2Router {
             // Tenta executar outra arbitragem durante o swap
             bytes memory data = abi.encodeWithSignature(
                 "executeArbitrage((address,address,uint256,uint8,uint8))",
-                IArbitrageBot.ArbitrageParams({
+                ArbitrageBot.ArbitrageParams({
                     tokenIn: path[0],
                     tokenOut: path[1],
                     amount: amountIn,
