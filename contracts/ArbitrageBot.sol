@@ -5,20 +5,14 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IUniswapV2Router.sol";
+import "./interfaces/IArbitrageBot.sol";
 
-contract ArbitrageBot is Ownable, ReentrancyGuard {
+
+contract ArbitrageBot is IArbitrageBot, Ownable, ReentrancyGuard {
     struct DexInfo {
         IUniswapV2Router router;
         string name;
         bool enabled;
-    }
-
-    struct ArbitrageParams {
-        address tokenIn;
-        address tokenOut;
-        uint256 amount;
-        uint8 buyDexIndex;
-        uint8 sellDexIndex;
     }
 
     mapping(uint8 => DexInfo) public dexes;

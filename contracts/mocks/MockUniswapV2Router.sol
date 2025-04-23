@@ -4,10 +4,21 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IUniswapV2Router.sol";
 import "../interfaces/IMockAttacker.sol";
+import "../interfaces/IArbitrageBot.sol";
 
 contract MockUniswapV2Router is IUniswapV2Router {
     uint256 public slippageFactor = 100; // 100 = no slippage, 90 = 10% slippage
     uint256 private constant PROFIT_FACTOR = 150; // 50% profit para garantir que o primeiro swap seja lucrativo
+    bool public isAttacking;
+    address public targetBot;
+
+    constructor() {
+        isAttacking = false;
+    }
+
+    function setTargetBot(address _target) external {
+        targetBot = _target;
+    }
 
     function setSlippageFactor(uint256 _slippageFactor) external {
         slippageFactor = _slippageFactor;
@@ -30,14 +41,29 @@ contract MockUniswapV2Router is IUniswapV2Router {
         amounts[0] = amountIn;
         amounts[1] = (amountIn * PROFIT_FACTOR) / 100;
 
-        // Tenta reentrar chamando onERC20Transfer no msg.sender (ArbitrageBot)
-        try IMockAttacker(msg.sender).onERC20Transfer(path[0], amountIn) {
-            // Tentativa de reentrância bem-sucedida
-        } catch {
-            // Falha na reentrância, continua normalmente
+        // Se o chamador é o bot alvo e não estamos no meio de um ataque, tenta reentrar
+        if (!isAttacking && msg.sender == targetBot) {
+            isAttacking = true;
+
+            // Tenta executar outra arbitragem durante o swap
+            bytes memory data = abi.encodeWithSignature(
+                "executeArbitrage((address,address,uint256,uint8,uint8))",
+                IArbitrageBot.ArbitrageParams({
+                    tokenIn: path[0],
+                    tokenOut: path[1],
+                    amount: amountIn,
+                    buyDexIndex: 0,
+                    sellDexIndex: 1
+                })
+            );
+            
+            (bool success,) = targetBot.call(data);
+            require(!success, "Reentrancy attack should have failed");
+
+            isAttacking = false;
         }
 
-        // Transfere os tokens depois da tentativa de reentrância
+        // Transfere os tokens
         IERC20(path[path.length-1]).transfer(to, amounts[1]);
         
         return amounts;

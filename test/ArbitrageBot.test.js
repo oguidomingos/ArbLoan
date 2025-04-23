@@ -137,19 +137,25 @@ describe("ArbitrageBot", function () {
       await tokenB.mint(owner.address, amount.mul(4));
 
       // Deploy o router malicioso
-      const ReentrantRouter = await ethers.getContractFactory("MockReentrantRouter");
-      const maliciousRouter = await ReentrantRouter.deploy(arbitrageBot.address);
+      const MockRouter = await ethers.getContractFactory("MockUniswapV2Router");
+      const maliciousRouter = await MockRouter.deploy();
+      
+      // Configura o alvo do ataque
+      await maliciousRouter.setTargetBot(arbitrageBot.address);
 
       // Transferir tokens para o router malicioso
       await tokenA.transfer(maliciousRouter.address, amount);
       await tokenB.transfer(maliciousRouter.address, amount);
 
-      // Adicione o DEX malicioso
+      // Adicione o DEX malicioso como primeiro DEX
       await arbitrageBot.addDex(maliciousRouter.address, "MaliciousDEX");
 
       // Aprove e transfira tokens para o ArbitrageBot
       await tokenA.approve(arbitrageBot.address, amount);
       await tokenA.transfer(arbitrageBot.address, amount);
+
+      // Aprova o router malicioso para gastar os tokens do ArbitrageBot
+      await arbitrageBot.addDex(maliciousRouter.address, "MaliciousDEX2");
 
       const arbitrageParams = {
         tokenIn: tokenA.address,
